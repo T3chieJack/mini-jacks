@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Jack Head Mosaic — Jacksucksatlife Edition</title>
+  <style>
+    body{
+      font-family:'Poppins',system-ui,Roboto,Arial;
+      margin:18px;
+      background:linear-gradient(180deg,#1b0f28 0%,#0a0016 100%);
+      color:#ffe8ff;
+      text-shadow:0 1px 2px rgba(0,0,0,0.4);
+    }
+    h2{
+      color:#ff4cf7;
+      font-size:1.8rem;
+      text-align:center;
+      margin-bottom:0.2em;
+    }
+    p{text-align:center;max-width:700px;margin:0 auto 24px;color:#ffdfff}
+    .panel{display:flex;gap:16px;flex-wrap:wrap;justify-content:center}
+    .controls{
+      min-width:320px;
+      max-width:380px;
+      background:rgba(60,0,100,0.45);
+      padding:18px;
+      border-radius:16px;
+      box-shadow:0 6px 18px rgba(0,0,0,.6),inset 0 0 12px #ff4cf7;
+      backdrop-filter:blur(8px);
+    }
+    label{display:block;font-size:13px;margin-top:8px;color:#ffd6ff}
+    input[type=range]{width:100%}
+    canvas{background:transparent;border:2px dashed rgba(255,76,247,.3);max-width:100%;border-radius:12px}
+    button{margin-top:10px;padding:8px 12px;border-radius:8px;border:0;background:#ff4cf7;color:#fff;cursor:pointer;font-weight:600;box-shadow:0 0 10px #ff4cf7a0;transition:transform .2s}
+    button:hover{transform:scale(1.05)}
+    small{color:#ffbdf9}
+  </style>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <h2>Jack Head Mosaic</h2>
+  <p>Recreate any image using thousands of JackSucksAtLife heads! Upload your own or use the default Jack head automatically.</p>
+
+  <div class="panel">
+    <div class="controls">
+      <label>Target image (the picture to recreate)</label>
+      <input id="targetFile" type="file" accept="image/*">
+
+      <label>Tile image (Jack head, optional)</label>
+      <input id="tileFile" type="file" accept="image/*">
+      <small>If not provided, a default Jack head will load from your server.</small>
+
+      <label>Tile size (pixels)</label>
+      <input id="tileSize" type="range" min="8" max="128" value="32">
+      <div><span id="tileSizeVal">32</span> px</div>
+
+      <label>Tint strength (0 = no tint, 1 = full color)</label>
+      <input id="tint" type="range" min="0" max="1" step="0.01" value="0.88">
+      <div><span id="tintVal">0.88</span></div>
+
+      <label><input id="randomRotation" type="checkbox"> random rotation of tiles</label>
+      <label><input id="useAlphaMask" type="checkbox" checked> respect target transparency</label>
+
+      <button id="render">Generate mosaic</button>
+      <button id="download">Download PNG</button>
+    </div>
+
+    <div style="flex:1">
+      <canvas id="outCanvas"></canvas>
+    </div>
+  </div>
+
+  <script>
+    // Replace this URL with your hosted transparent Jack head on your domain or GitHub Pages
+    const DEFAULT_TILE_URL = 'jack-head.png';
+
+    const targetFile = document.getElementById('targetFile');
+    const tileFile = document.getElementById('tileFile');
+    const tileSize = document.getElementById('tileSize');
+    const tileSizeVal = document.getElementById('tileSizeVal');
+    const tint = document.getElementById('tint');
+    const tintVal = document.getElementById('tintVal');
+    const renderBtn = document.getElementById('render');
+    const downloadBtn = document.getElementById('download');
+    const outCanvas = document.getElementById('outCanvas');
+    const randomRotation = document.getElementById('randomRotation');
+    const useAlphaMask = document.getElementById('useAlphaMask');
+
+    tileSize.addEventListener('input', ()=> tileSizeVal.textContent = tileSize.value);
+    tint.addEventListener('input', ()=> tintVal.textContent = tint.value);
+
+    let targetImg = null;
+    let tileImg = new Image();
+
+    // Load Jack head by default
+    tileImg.crossOrigin = 'anonymous';
+    tileImg.src = DEFAULT_TILE_URL;
+
+    function loadImageFromFile(file) {
+      return new Promise((res, rej) => {
+        if (!file) return res(null);
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => { URL.revokeObjectURL(url); res(img); };
+        img.onerror = e => rej(e);
+        img.src = url;
+      });
+    }
+
+    targetFile.addEventListener('change', async e => { targetImg = await loadImageFromFile(e.target.files[0]); drawPreview(); });
+    tileFile.addEventListener('change', async e => { tileImg = await loadImageFromFile(e.target.files[0]); drawPreview(); });
+
+    function drawPreview(){
+      if (!targetImg && !tileImg) return;
+      const ctx = outCanvas.getContext('2d');
+      if (targetImg) {
+        outCanvas.width = targetImg.width;
+        outCanvas.height = targetImg.height;
+        ctx.clearRect(0,0,outCanvas.width,outCanvas.height);
+        ctx.drawImage(targetImg,0,0);
+      } else if (tileImg) {
+        outCanvas.width = tileImg.width;
+        outCanvas.height = tileImg.height;
+        ctx.clearRect(0,0,outCanvas.width,outCanvas.height);
+        ctx.drawImage(tileImg,0,0);
+      }
+    }
+
+    function averageColor(imageData, x, y, w, h) {
+      const data = imageData.data;
+      const width = imageData.width;
+      let r=0,g=0,b=0,a=0, count=0;
+      const x0 = Math.max(0, Math.floor(x));
+      const y0 = Math.max(0, Math.floor(y));
+      const x1 = Math.min(width, Math.floor(x+w));
+      const y1 = Math.min(imageData.height, Math.floor(y+h));
+      for (let yy=y0; yy<y1; yy++){
+        for (let xx=x0; xx<x1; xx++){
+          const i = (yy*width + xx)*4;
+          r += data[i]; g += data[i+1]; b += data[i+2]; a += data[i+3];
+          count++;
+        }
+      }
+      if (count===0) return [0,0,0,0];
+      return [Math.round(r/count), Math.round(g/count), Math.round(b/count), Math.round(a/count)];
+    }
+
+    renderBtn.addEventListener('click', async ()=>{
+      if (!targetImg) return alert('Please upload a target image first.');
+
+      const cell = parseInt(tileSize.value,10);
+      const outW = targetImg.width;
+      const outH = targetImg.height;
+      outCanvas.width = outW;
+      outCanvas.height = outH;
+      const outCtx = outCanvas.getContext('2d');
+      outCtx.clearRect(0,0,outW,outH);
+
+      const sampleCanvas = document.createElement('canvas');
+      sampleCanvas.width = outW; sampleCanvas.height = outH;
+      const sctx = sampleCanvas.getContext('2d');
+      sctx.drawImage(targetImg,0,0);
+      const imageData = sctx.getImageData(0,0,outW,outH);
+
+      const tileCanvas = document.createElement('canvas');
+      tileCanvas.width = cell; tileCanvas.height = cell;
+      const tctx = tileCanvas.getContext('2d');
+
+      for (let y=0; y<outH; y+=cell){
+        for (let x=0; x<outW; x+=cell){
+          const avg = averageColor(imageData, x, y, cell, cell);
+          const alpha = avg[3];
+          if (useAlphaMask.checked && alpha < 30) continue;
+
+          tctx.clearRect(0,0,tileCanvas.width,tileCanvas.height);
+          tctx.save();
+          if (randomRotation.checked) {
+            const angle = (Math.random()-0.5) * 0.6;
+            tctx.translate(cell/2, cell/2);
+            tctx.rotate(angle);
+            tctx.drawImage(tileImg, -cell/2, -cell/2, cell, cell);
+          } else {
+            tctx.drawImage(tileImg, 0, 0, cell, cell);
+          }
+          tctx.restore();
+
+          tctx.globalCompositeOperation = 'source-atop';
+          tctx.fillStyle = `rgba(${avg[0]},${avg[1]},${avg[2]},${tint.value})`;
+          tctx.fillRect(0,0,cell,cell);
+          tctx.globalCompositeOperation = 'source-over';
+
+          outCtx.drawImage(tileCanvas, x, y);
+        }
+      }
+
+      alert('Mosaic complete! Check the preview or download your Jackified image.');
+    });
+
+    downloadBtn.addEventListener('click', ()=>{
+      const url = outCanvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = url; a.download = 'jack-head-mosaic.png';
+      a.click();
+    });
+  </script>
+</body>
+</html>
